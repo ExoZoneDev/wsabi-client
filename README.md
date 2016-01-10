@@ -10,9 +10,9 @@ import {WsabiClient} from "wsabi-client";
 
 // You can set the promise and websocket libraries the client will use.
 // This is useful in environments that either don't support Promises, or
-// environments such as NodeJS that don't provide a default WebSocket implmentation.
+// environments such as NodeJS that don't provide a default WebSocket implementation.
 import {WsabiSocket} from "wsabi-client";
-WsabiSocket.WebSocekt = require("ws");
+WsabiSocket.WebSocket = require("ws");
 WsabiClient.Promise = require("bluebird");
 
 let wsabi = new WsabiClient("wss://localhost:3000");
