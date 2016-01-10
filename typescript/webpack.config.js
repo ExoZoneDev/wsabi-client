@@ -8,7 +8,7 @@ module.exports = {
     "wsabi-client.min": "./index.ts"
   },
   output: {
-    path: "./dist",
+    path: "../dist",
     filename: "[name].js"
   },
   devtool: 'source-map',
