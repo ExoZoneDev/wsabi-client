@@ -8,10 +8,10 @@ export declare class WsabiClient {
     private subscriptions;
     constructor(url: string, autoConnect?: boolean);
     connect(): void;
-    request(method: string, url: string, data?: any): Promise<any>;
-    get(url: string): Promise<any>;
-    post(url: string, data: any): Promise<any>;
-    put(url: string, data: any): Promise<any>;
-    delete(url: string, data: any): Promise<any>;
+    request(method: string, url: string, data?: any, headers?: any): Promise<any>;
+    get(url: string, headers?: any): Promise<any>;
+    post(url: string, data: any, headers?: any): Promise<any>;
+    put(url: string, data: any, headers?: any): Promise<any>;
+    delete(url: string, data: any, headers?: any): Promise<any>;
     live(slug: string): Observable<any>;
 }

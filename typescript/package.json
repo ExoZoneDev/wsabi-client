@@ -1,6 +1,6 @@
 {
   "name": "wsabi-client-ts",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Lightweight client for the hapi websocket layer, wsabi.",
   "main": "index.ts",
   "dependencies": {

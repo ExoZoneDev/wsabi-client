@@ -490,15 +490,16 @@
 	    WsabiClient.prototype.connect = function () {
 	        this.socket.connect();
 	    };
-	    WsabiClient.prototype.request = function (method, url, data) {
+	    WsabiClient.prototype.request = function (method, url, data, headers) {
 	        var _this = this;
 	        if (data === void 0) { data = {}; }
+	        if (headers === void 0) { headers = {}; }
 	        return new WsabiClient.Promise(function (resolve) {
 	            _this.socket.send([
 	                method,
 	                {
 	                    method: method,
-	                    headers: {},
+	                    headers: headers,
 	                    url: url,
 	                    data: data
 	                }
@@ -507,22 +508,26 @@
 	            return res[0];
 	        });
 	    };
-	    WsabiClient.prototype.get = function (url) {
+	    WsabiClient.prototype.get = function (url, headers) {
+	        if (headers === void 0) { headers = {}; }
 	        return this.request("get", url).then(function (res) {
 	            return res.body;
 	        });
 	    };
-	    WsabiClient.prototype.post = function (url, data) {
+	    WsabiClient.prototype.post = function (url, data, headers) {
+	        if (headers === void 0) { headers = {}; }
 	        return this.request("post", url, data).then(function (res) {
 	            return res.body;
 	        });
 	    };
-	    WsabiClient.prototype.put = function (url, data) {
+	    WsabiClient.prototype.put = function (url, data, headers) {
+	        if (headers === void 0) { headers = {}; }
 	        return this.request("put", url, data).then(function (res) {
 	            return res.body;
 	        });
 	    };
-	    WsabiClient.prototype.delete = function (url, data) {
+	    WsabiClient.prototype.delete = function (url, data, headers) {
+	        if (headers === void 0) { headers = {}; }
 	        return this.request("delete", url, data).then(function (res) {
 	            return res.body;
 	        });

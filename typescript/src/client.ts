@@ -25,13 +25,13 @@ export class WsabiClient {
     this.socket.connect();
   }
 
-  public request(method: string, url: string, data: any = {}) {
+  public request(method: string, url: string, data: any = {}, headers: any = {}) {
     return new WsabiClient.Promise((resolve) => {
       this.socket.send([
         method,
         {
           method: method,
-          headers: {},
+          headers: headers,
           url: url,
           data: data
         }
@@ -41,26 +41,26 @@ export class WsabiClient {
     });
   }
 
-  public get(url: string) {
-    return this.request("get", url).then(function (res) {
+  public get(url: string, headers: any = {}) {
+    return this.request("get", url, {}, headers).then(function (res) {
       return res.body;
     });
   }
 
-  public post(url: string, data: any) {
-    return this.request("post", url, data).then(function (res) {
+  public post(url: string, data: any, headers: any = {}) {
+    return this.request("post", url, data, headers).then(function (res) {
       return res.body;
     });
   }
 
-  public put(url: string, data: any) {
-    return this.request("put", url, data).then(function (res) {
+  public put(url: string, data: any, headers: any = {}) {
+    return this.request("put", url, data, headers).then(function (res) {
       return res.body;
     });
   }
 
-  public delete(url: string, data: any) {
-    return this.request("delete", url, data).then(function (res) {
+  public delete(url: string, data: any, headers: any = {}) {
+    return this.request("delete", url, data, headers).then(function (res) {
       return res.body;
     });
   }
