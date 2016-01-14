@@ -21,4 +21,5 @@ export declare class WsabiSocket extends EventEmitter {
     private ping();
     send(data: any, callback?: (data: any) => void): void;
     wait(id: number, callback?: (data: any) => void): void;
+    isConnected(): boolean;
 }

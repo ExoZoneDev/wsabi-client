@@ -27,15 +27,29 @@ export class WsabiClient {
 
   public request(method: string, url: string, data: any = {}, headers: any = {}) {
     return new WsabiClient.Promise((resolve) => {
-      this.socket.send([
-        method,
-        {
-          method: method,
-          headers: headers,
-          url: url,
-          data: data
-        }
-      ], resolve);
+      if (!this.socket.isConnected()) {
+        this.socket.on("open", () => {
+          this.socket.send([
+            method,
+            {
+              method: method,
+              headers: headers,
+              url: url,
+              data: data
+            }
+          ], resolve);
+        })
+      } else {
+        this.socket.send([
+          method,
+          {
+            method: method,
+            headers: headers,
+            url: url,
+            data: data
+          }
+        ], resolve);
+      }
     }).then(function (res) {
       return res[0];
     });

@@ -107,4 +107,8 @@ export class WsabiSocket extends EventEmitter {
   public wait(id: number, callback?: (data: any) => void) {
     this.waiting[id] = callback;
   }
+  
+  public isConnected() {
+    return this._socket.readyState === this._socket.OPEN;
+  }
 }

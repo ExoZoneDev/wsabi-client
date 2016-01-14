@@ -20,15 +20,30 @@ var WsabiClient = (function () {
         if (data === void 0) { data = {}; }
         if (headers === void 0) { headers = {}; }
         return new WsabiClient.Promise(function (resolve) {
-            _this.socket.send([
-                method,
-                {
-                    method: method,
-                    headers: headers,
-                    url: url,
-                    data: data
-                }
-            ], resolve);
+            if (!_this.socket.isConnected()) {
+                _this.socket.on("open", function () {
+                    _this.socket.send([
+                        method,
+                        {
+                            method: method,
+                            headers: headers,
+                            url: url,
+                            data: data
+                        }
+                    ], resolve);
+                });
+            }
+            else {
+                _this.socket.send([
+                    method,
+                    {
+                        method: method,
+                        headers: headers,
+                        url: url,
+                        data: data
+                    }
+                ], resolve);
+            }
         }).then(function (res) {
             return res[0];
         });

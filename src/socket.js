@@ -102,6 +102,9 @@ var WsabiSocket = (function (_super) {
     WsabiSocket.prototype.wait = function (id, callback) {
         this.waiting[id] = callback;
     };
+    WsabiSocket.prototype.isConnected = function () {
+        return this._socket.readyState === this._socket.OPEN;
+    };
     WsabiSocket.WebSocket = typeof (WebSocket) === "function" ? WebSocket : undefined;
     WsabiSocket.messageRegex = /(\d)(\d*)(.*)/;
     return WsabiSocket;
