@@ -3,11 +3,18 @@ var Observable_1 = require("rxjs/Observable");
 require("rxjs/add/observable/fromEvent");
 var WsabiClient = (function () {
     function WsabiClient(url, autoConnect) {
+        var _this = this;
         if (autoConnect === void 0) { autoConnect = true; }
         this.liveUrl = "/live";
         this.logging = true;
         this.subscriptions = {};
         this.socket = new socket_1.WsabiSocket(url);
+        this.socket.on("reopen", function () {
+            var slugs = Object.keys(_this.subscriptions);
+            for (var i = 0, len = slugs.length; i < len; i++) {
+                _this.put(_this.liveUrl, { slug: slugs[i] });
+            }
+        });
         if (autoConnect) {
             this.connect();
         }
@@ -21,7 +28,7 @@ var WsabiClient = (function () {
         if (headers === void 0) { headers = {}; }
         return new WsabiClient.Promise(function (resolve, reject) {
             if (!_this.socket.isConnected()) {
-                _this.socket.on("open", function () {
+                _this.socket.once("open", function () {
                     _this.socket.send([
                         method,
                         {

@@ -9,6 +9,7 @@ export class WsabiSocket extends EventEmitter {
   private waiting: {
     [key: string]: (data: any) => void;
   } = {};
+  private reconnecting: boolean = false;
 
   constructor(public url: string) {
     super();
@@ -21,7 +22,10 @@ export class WsabiSocket extends EventEmitter {
     });
     this._socket.addEventListener("message", (res) => this._handleSocketMessage(res.data));
     this._socket.addEventListener("close", (res) => {
-      console.log("Socket closed:", res);
+      this.reconnecting = true;
+      setTimeout(() => {
+        this.connect();
+      }, 10000);
     });
     this._socket.addEventListener("error", (res) => {
       console.log("ERROR:", res);
@@ -36,6 +40,10 @@ export class WsabiSocket extends EventEmitter {
     let match = WsabiSocket.messageRegex.exec(res);
     switch (parseInt(match[1])) {
       case 0:
+        if (this.reconnecting) {
+          this.reconnecting = false;
+          this.emit("reopen");
+        }
         this.emit("open");
         break;
       case 1:
@@ -64,7 +72,6 @@ export class WsabiSocket extends EventEmitter {
   private _handleMessagePacket(type: number, id: number, data: any) {
     switch (type) {
       case 2:
-        this.messageId = Math.max(this.messageId, id + 1);
         if (Array.isArray(data) && data.length == 2) {
           this.emit(data[0], data[1]);
         } else {
@@ -72,7 +79,6 @@ export class WsabiSocket extends EventEmitter {
         }
         break;
       case 3:
-        this.messageId = Math.max(this.messageId, id + 1);
         if (this.waiting[id] != null) {
           this.waiting[id].call(this, data);
           delete this.waiting[id];

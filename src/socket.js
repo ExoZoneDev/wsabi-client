@@ -11,6 +11,7 @@ var WsabiSocket = (function (_super) {
         this.url = url;
         this.messageId = 0;
         this.waiting = {};
+        this.reconnecting = false;
     }
     WsabiSocket.prototype.connect = function () {
         var _this = this;
@@ -20,7 +21,10 @@ var WsabiSocket = (function (_super) {
         });
         this._socket.addEventListener("message", function (res) { return _this._handleSocketMessage(res.data); });
         this._socket.addEventListener("close", function (res) {
-            console.log("Socket closed:", res);
+            _this.reconnecting = true;
+            setTimeout(function () {
+                _this.connect();
+            }, 10000);
         });
         this._socket.addEventListener("error", function (res) {
             console.log("ERROR:", res);
@@ -33,6 +37,10 @@ var WsabiSocket = (function (_super) {
         var match = WsabiSocket.messageRegex.exec(res);
         switch (parseInt(match[1])) {
             case 0:
+                if (this.reconnecting) {
+                    this.reconnecting = false;
+                    this.emit("reopen");
+                }
                 this.emit("open");
                 break;
             case 1:
@@ -60,7 +68,6 @@ var WsabiSocket = (function (_super) {
     WsabiSocket.prototype._handleMessagePacket = function (type, id, data) {
         switch (type) {
             case 2:
-                this.messageId = Math.max(this.messageId, id + 1);
                 if (Array.isArray(data) && data.length == 2) {
                     this.emit(data[0], data[1]);
                 }
@@ -69,7 +76,6 @@ var WsabiSocket = (function (_super) {
                 }
                 break;
             case 3:
-                this.messageId = Math.max(this.messageId, id + 1);
                 if (this.waiting[id] != null) {
                     this.waiting[id].call(this, data);
                     delete this.waiting[id];

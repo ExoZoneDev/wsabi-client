@@ -13,6 +13,7 @@ export declare class WsabiSocket extends EventEmitter {
     private _socket;
     private messageId;
     private waiting;
+    private reconnecting;
     constructor(url: string);
     connect(): void;
     close(): void;

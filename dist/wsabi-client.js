@@ -67,6 +67,7 @@
 	        this.url = url;
 	        this.messageId = 0;
 	        this.waiting = {};
+	        this.reconnecting = false;
 	    }
 	    WsabiSocket.prototype.connect = function () {
 	        var _this = this;
@@ -76,7 +77,10 @@
 	        });
 	        this._socket.addEventListener("message", function (res) { return _this._handleSocketMessage(res.data); });
 	        this._socket.addEventListener("close", function (res) {
-	            console.log("Socket closed:", res);
+	            _this.reconnecting = true;
+	            setTimeout(function () {
+	                _this.connect();
+	            }, 10000);
 	        });
 	        this._socket.addEventListener("error", function (res) {
 	            console.log("ERROR:", res);
@@ -89,6 +93,10 @@
 	        var match = WsabiSocket.messageRegex.exec(res);
 	        switch (parseInt(match[1])) {
 	            case 0:
+	                if (this.reconnecting) {
+	                    this.reconnecting = false;
+	                    this.emit("reopen");
+	                }
 	                this.emit("open");
 	                break;
 	            case 1:
@@ -116,7 +124,6 @@
 	    WsabiSocket.prototype._handleMessagePacket = function (type, id, data) {
 	        switch (type) {
 	            case 2:
-	                this.messageId = Math.max(this.messageId, id + 1);
 	                if (Array.isArray(data) && data.length == 2) {
 	                    this.emit(data[0], data[1]);
 	                }
@@ -125,7 +132,6 @@
 	                }
 	                break;
 	            case 3:
-	                this.messageId = Math.max(this.messageId, id + 1);
 	                if (this.waiting[id] != null) {
 	                    this.waiting[id].call(this, data);
 	                    delete this.waiting[id];
@@ -157,6 +163,9 @@
 	    };
 	    WsabiSocket.prototype.wait = function (id, callback) {
 	        this.waiting[id] = callback;
+	    };
+	    WsabiSocket.prototype.isConnected = function () {
+	        return this._socket.readyState === this._socket.OPEN;
 	    };
 	    WsabiSocket.WebSocket = typeof (WebSocket) === "function" ? WebSocket : undefined;
 	    WsabiSocket.messageRegex = /(\d)(\d*)(.*)/;
@@ -478,11 +487,18 @@
 	__webpack_require__(14);
 	var WsabiClient = (function () {
 	    function WsabiClient(url, autoConnect) {
+	        var _this = this;
 	        if (autoConnect === void 0) { autoConnect = true; }
 	        this.liveUrl = "/live";
 	        this.logging = true;
 	        this.subscriptions = {};
 	        this.socket = new socket_1.WsabiSocket(url);
+	        this.socket.on("reopen", function () {
+	            var slugs = Object.keys(_this.subscriptions);
+	            for (var i = 0, len = slugs.length; i < len; i++) {
+	                _this.put(_this.liveUrl, { slug: slugs[i] });
+	            }
+	        });
 	        if (autoConnect) {
 	            this.connect();
 	        }
@@ -494,41 +510,70 @@
 	        var _this = this;
 	        if (data === void 0) { data = {}; }
 	        if (headers === void 0) { headers = {}; }
-	        return new WsabiClient.Promise(function (resolve) {
-	            _this.socket.send([
-	                method,
-	                {
-	                    method: method,
-	                    headers: headers,
-	                    url: url,
-	                    data: data
-	                }
-	            ], resolve);
+	        return new WsabiClient.Promise(function (resolve, reject) {
+	            if (!_this.socket.isConnected()) {
+	                _this.socket.once("open", function () {
+	                    _this.socket.send([
+	                        method,
+	                        {
+	                            method: method,
+	                            headers: headers,
+	                            url: url,
+	                            data: data
+	                        }
+	                    ], function (data) {
+	                        if (data[0].statusCode != 200) {
+	                            reject(data[0]);
+	                        }
+	                        else {
+	                            resolve(data);
+	                        }
+	                    });
+	                });
+	            }
+	            else {
+	                _this.socket.send([
+	                    method,
+	                    {
+	                        method: method,
+	                        headers: headers,
+	                        url: url,
+	                        data: data
+	                    }
+	                ], function (data) {
+	                    if (data[0].statusCode != 200) {
+	                        reject(data);
+	                    }
+	                    else {
+	                        resolve(data);
+	                    }
+	                });
+	            }
 	        }).then(function (res) {
 	            return res[0];
 	        });
 	    };
 	    WsabiClient.prototype.get = function (url, headers) {
 	        if (headers === void 0) { headers = {}; }
-	        return this.request("get", url).then(function (res) {
+	        return this.request("get", url, {}, headers).then(function (res) {
 	            return res.body;
 	        });
 	    };
 	    WsabiClient.prototype.post = function (url, data, headers) {
 	        if (headers === void 0) { headers = {}; }
-	        return this.request("post", url, data).then(function (res) {
+	        return this.request("post", url, data, headers).then(function (res) {
 	            return res.body;
 	        });
 	    };
 	    WsabiClient.prototype.put = function (url, data, headers) {
 	        if (headers === void 0) { headers = {}; }
-	        return this.request("put", url, data).then(function (res) {
+	        return this.request("put", url, data, headers).then(function (res) {
 	            return res.body;
 	        });
 	    };
 	    WsabiClient.prototype.delete = function (url, data, headers) {
 	        if (headers === void 0) { headers = {}; }
-	        return this.request("delete", url, data).then(function (res) {
+	        return this.request("delete", url, data, headers).then(function (res) {
 	            return res.body;
 	        });
 	    };

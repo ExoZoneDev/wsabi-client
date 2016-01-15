@@ -16,6 +16,13 @@ export class WsabiClient {
 
   constructor(url: string, autoConnect: boolean = true) {
     this.socket = new WsabiSocket(url);
+    this.socket.on("reopen", () => {
+      let slugs = Object.keys(this.subscriptions);
+      for (let i = 0, len = slugs.length; i < len; i++) {
+        this.put(this.liveUrl, {slug: slugs[i]});
+      }
+    })
+
     if (autoConnect) {
       this.connect();
     }
@@ -28,7 +35,7 @@ export class WsabiClient {
   public request(method: string, url: string, data: any = {}, headers: any = {}) {
     return new WsabiClient.Promise((resolve, reject) => {
       if (!this.socket.isConnected()) {
-        this.socket.on("open", () => {
+        this.socket.once("open", () => {
           this.socket.send([
             method,
             {
