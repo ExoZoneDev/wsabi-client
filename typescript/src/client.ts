@@ -26,7 +26,7 @@ export class WsabiClient {
   }
 
   public request(method: string, url: string, data: any = {}, headers: any = {}) {
-    return new WsabiClient.Promise((resolve) => {
+    return new WsabiClient.Promise((resolve, reject) => {
       if (!this.socket.isConnected()) {
         this.socket.on("open", () => {
           this.socket.send([
@@ -37,7 +37,13 @@ export class WsabiClient {
               url: url,
               data: data
             }
-          ], resolve);
+          ], (data) => {
+            if (data[0].statusCode != 200) {
+              reject(data[0]);
+            } else {
+              resolve(data);
+            }
+          });
         })
       } else {
         this.socket.send([
@@ -48,7 +54,13 @@ export class WsabiClient {
             url: url,
             data: data
           }
-        ], resolve);
+        ], (data) => {
+          if (data[0].statusCode != 200) {
+            reject(data);
+          } else {
+            resolve(data);
+          }
+        });
       }
     }).then(function (res) {
       return res[0];

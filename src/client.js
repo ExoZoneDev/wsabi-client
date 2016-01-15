@@ -19,7 +19,7 @@ var WsabiClient = (function () {
         var _this = this;
         if (data === void 0) { data = {}; }
         if (headers === void 0) { headers = {}; }
-        return new WsabiClient.Promise(function (resolve) {
+        return new WsabiClient.Promise(function (resolve, reject) {
             if (!_this.socket.isConnected()) {
                 _this.socket.on("open", function () {
                     _this.socket.send([
@@ -30,7 +30,14 @@ var WsabiClient = (function () {
                             url: url,
                             data: data
                         }
-                    ], resolve);
+                    ], function (data) {
+                        if (data[0].statusCode != 200) {
+                            reject(data[0]);
+                        }
+                        else {
+                            resolve(data);
+                        }
+                    });
                 });
             }
             else {
@@ -42,7 +49,14 @@ var WsabiClient = (function () {
                         url: url,
                         data: data
                     }
-                ], resolve);
+                ], function (data) {
+                    if (data[0].statusCode != 200) {
+                        reject(data);
+                    }
+                    else {
+                        resolve(data);
+                    }
+                });
             }
         }).then(function (res) {
             return res[0];
