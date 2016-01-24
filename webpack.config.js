@@ -4,11 +4,11 @@ var path = require("path");
 
 module.exports = {
   entry: {
-    "wsabi-client": "./index.ts",
-    "wsabi-client.min": "./index.ts"
+    "wsabi-client": "./typescript/index.ts",
+    "wsabi-client.min": "./typescript/index.ts"
   },
   output: {
-    path: "../dist",
+    path: "./dist",
     filename: "[name].js"
   },
   devtool: 'source-map',

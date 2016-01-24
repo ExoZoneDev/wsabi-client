@@ -63,7 +63,7 @@ export class WsabiClient {
           }
         ], (data) => {
           if (data[0].statusCode != 200) {
-            reject(data);
+            reject(data[0]);
           } else {
             resolve(data);
           }

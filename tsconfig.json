@@ -5,7 +5,8 @@
     "moduleResolution": "node",
     "removeComments": true,
     "sourceMap": true,
-    "outDir": "../"
+    "rootDir": "typescript",
+    "outDir": "."
   },
   "exclude": [
     "node_modules"
