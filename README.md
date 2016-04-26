@@ -2,7 +2,7 @@
 A lightweight client for the hapi websocket layer, wsabi.
 
 This aims to be lightweight and avoids using large libraries such as sails.io.js and socket.io-client.
-The footprint is currently 14.2 kB minified. This could be smaller but would require sacrificing the use of rxjs observables. I may consider providing a version that doesn't require that.
+The footprint is currently 4.8 kB minified and gzipped.
 
 ## Usage
 ```typescript
