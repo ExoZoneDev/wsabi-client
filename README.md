@@ -11,24 +11,24 @@ import {WsabiClient} from "wsabi-client";
 // You can set the promise and websocket libraries the client will use.
 // This is useful in environments that either don't support Promises, or
 // environments such as NodeJS that don't provide a default WebSocket implementation.
-import {WsabiSocket} from "wsabi-client";
-WsabiSocket.WebSocket = require("ws");
+WsabiClient.WebSocket = require("ws");
 WsabiClient.Promise = require("bluebird");
 
 let wsabi = new WsabiClient("wss://localhost:3000");
 
 // Set the live endpoint. Defaults to '/live'
 wsabi.liveUrl = "/v1/live";
-
-wsabi.socket.on("open", function () {
-  console.log("Socket connection open!");
   
-  // Send requests to the server with get, put, post, delete, or request.
-  wsabi.get("/v1/user/current").then((res) => {
-    // Subscribe to a live event
-    wsabi.live(`user:${res.id}:update`).subscribe((res) => {
-      console.log("User update!", res);
-    })
-  });
+// Send requests to the server with get, put, post, delete, or request.
+wsabi.get("/v1/user/current").then((res) => {
+  // Subscribe to a live event
+  let updateSub = wsabi.live(`user:${res.id}:update`).subscribe(
+    update => console.log("User update!", update),
+    err => console.error("There was an error subscribing", err)
+  )
+  
+  // ...
+  
+  updateSub.unsubscribe();
 });
 ```
