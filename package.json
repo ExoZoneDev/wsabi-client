@@ -2,7 +2,8 @@
   "name": "wsabi-client",
   "version": "1.1.0",
   "description": "Lightweight client for the hapi websocket layer, wsabi.",
-  "main": "index.js",
+  "main": "js/index.js",
+  "typings": "js/index",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ExoZoneDev/wsabi-client.git"
