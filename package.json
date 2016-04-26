@@ -7,6 +7,9 @@
     "type": "git",
     "url": "git+https://github.com/ExoZoneDev/wsabi-client.git"
   },
+  "scripts": {
+    "webpack": "webpack"
+  },
   "keywords": [
     "hapi",
     "websocket",
@@ -19,11 +22,12 @@
   },
   "homepage": "https://github.com/ExoZoneDev/wsabi-client#readme",
   "dependencies": {
-    "rxjs": "^5.0.0-beta.0"
+    "rxjs": "^5.0.0-beta.6"
   },
   "devDependencies": {
-    "ts-loader": "^0.7.2",
+    "ts-loader": "^0.8.2",
     "typescript": "^1.7.5",
-    "webpack": "^1.12.10"
+    "webpack": "^1.12.10",
+    "ws": "^1.1.0"
   }
 }

@@ -44,6 +44,7 @@
 /* 0 */
 /***/ function(module, exports, __webpack_require__) {
 
+	"use strict";
 	var socket_1 = __webpack_require__(1);
 	exports.WsabiSocket = socket_1.WsabiSocket;
 	var client_1 = __webpack_require__(3);
@@ -54,6 +55,7 @@
 /* 1 */
 /***/ function(module, exports, __webpack_require__) {
 
+	"use strict";
 	var __extends = (this && this.__extends) || function (d, b) {
 	    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
 	    function __() { this.constructor = d; }
@@ -108,7 +110,7 @@
 	            case 4:
 	                var type = parseInt(match[2][0]);
 	                var id = parseInt(match[2].slice(1));
-	                var data;
+	                var data = void 0;
 	                try {
 	                    data = JSON.parse(match[3]);
 	                }
@@ -170,7 +172,7 @@
 	    WsabiSocket.WebSocket = typeof (WebSocket) === "function" ? WebSocket : undefined;
 	    WsabiSocket.messageRegex = /(\d)(\d*)(.*)/;
 	    return WsabiSocket;
-	})(events_1.EventEmitter);
+	}(events_1.EventEmitter));
 	exports.WsabiSocket = WsabiSocket;
 
 
@@ -482,17 +484,18 @@
 /* 3 */
 /***/ function(module, exports, __webpack_require__) {
 
+	"use strict";
 	var socket_1 = __webpack_require__(1);
 	var Observable_1 = __webpack_require__(4);
-	__webpack_require__(14);
+	__webpack_require__(19);
 	var WsabiClient = (function () {
 	    function WsabiClient(url, autoConnect) {
 	        var _this = this;
 	        if (autoConnect === void 0) { autoConnect = true; }
 	        this.liveUrl = "/live";
-	        this.logging = true;
 	        this.subscriptions = {};
 	        this.socket = new socket_1.WsabiSocket(url);
+	        // Resub to live events on reconnect.
 	        this.socket.on("reopen", function () {
 	            var slugs = Object.keys(_this.subscriptions);
 	            for (var i = 0, len = slugs.length; i < len; i++) {
@@ -503,6 +506,13 @@
 	            this.connect();
 	        }
 	    }
+	    Object.defineProperty(WsabiClient, "WebSocket", {
+	        set: function (ws) {
+	            socket_1.WsabiSocket.WebSocket = ws;
+	        },
+	        enumerable: true,
+	        configurable: true
+	    });
 	    WsabiClient.prototype.connect = function () {
 	        this.socket.connect();
 	    };
@@ -577,21 +587,54 @@
 	            return res.body;
 	        });
 	    };
-	    WsabiClient.prototype.live = function (slug) {
+	    WsabiClient.prototype.live = function (slug, listenConnect) {
 	        var _this = this;
-	        if (!this.subscriptions.hasOwnProperty(slug)) {
-	            this.subscriptions[slug] = Observable_1.Observable.fromEvent(this.socket, slug);
-	            this.put(this.liveUrl, { slug: slug }).then(function (res) {
-	                if (_this.logging) {
-	                    console.log("[Wsabi]", "[" + slug + "]", res.message || res);
-	                }
-	            });
+	        if (listenConnect === void 0) { listenConnect = false; }
+	        if (this.subscriptions[slug] == null) {
+	            this.subscriptions[slug] = 0;
 	        }
-	        return this.subscriptions[slug];
+	        return Observable_1.Observable.create(function (observer) {
+	            var updateCallback = function (data) { return observer.next(data); };
+	            if (_this.subscriptions[slug] === 0) {
+	                // Not yet subscribed
+	                _this.put(_this.liveUrl, { slug: slug })
+	                    .then(function (res) {
+	                    if (listenConnect) {
+	                        observer.next({
+	                            isClient: true,
+	                            message: "subscribed",
+	                            data: res
+	                        });
+	                    }
+	                    _this.subscriptions[slug]++;
+	                    _this.socket.on(slug, updateCallback);
+	                })
+	                    .catch(function (err) { return observer.error(err); });
+	            }
+	            else {
+	                // Already subscribed, just listen for the event.
+	                if (listenConnect) {
+	                    observer.next({
+	                        isClient: true,
+	                        message: "resubscribed"
+	                    });
+	                }
+	                _this.subscriptions[slug]++;
+	                _this.socket.on(slug, updateCallback);
+	            }
+	            // Cleanup listener and delete subscription if last listener on unsub.
+	            return function () {
+	                _this.subscriptions[slug]--;
+	                _this.socket.removeListener(slug, updateCallback);
+	                if (_this.subscriptions[slug] === 0) {
+	                    _this.delete(_this.liveUrl, { slug: slug });
+	                }
+	            };
+	        });
 	    };
-	    WsabiClient.Promise = typeof (Promise) === "function" ? Promise : undefined;
+	    WsabiClient.Promise = typeof Promise === "function" ? Promise : undefined;
 	    return WsabiClient;
-	})();
+	}());
 	exports.WsabiClient = WsabiClient;
 
 
@@ -599,10 +642,10 @@
 /* 4 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var Subscriber_1 = __webpack_require__(5);
-	var root_1 = __webpack_require__(12);
-	var SymbolShim_1 = __webpack_require__(11);
-	var rxSubscriber_1 = __webpack_require__(10);
+	"use strict";
+	var root_1 = __webpack_require__(5);
+	var observable_1 = __webpack_require__(7);
+	var toSubscriber_1 = __webpack_require__(8);
 	/**
 	 * A representation of any set of values over any amount of time. This the most basic building block
 	 * of RxJS.
@@ -612,10 +655,10 @@
 	var Observable = (function () {
 	    /**
 	     * @constructor
-	     * @param {Function} subscribe the function that is
-	     * called when the Observable is initially subscribed to. This function is given a Subscriber, to which new values
-	     * can be `next`ed, or an `error` method can be called to raise an error, or `complete` can be called to notify
-	     * of a successful completion.
+	     * @param {Function} subscribe the function that is  called when the Observable is
+	     * initially subscribed to. This function is given a Subscriber, to which new values
+	     * can be `next`ed, or an `error` method can be called to raise an error, or
+	     * `complete` can be called to notify of a successful completion.
 	     */
 	    function Observable(subscribe) {
 	        this._isScalar = false;
@@ -624,11 +667,11 @@
 	        }
 	    }
 	    /**
+	     * Creates a new Observable, with this Observable as the source, and the passed
+	     * operator defined as the new observable's operator.
 	     * @method lift
 	     * @param {Operator} operator the operator defining the operation to take on the observable
-	     * @returns {Observable} a new observable with the Operator applied
-	     * @description creates a new Observable, with this Observable as the source, and the passed
-	     * operator defined as the new observable's operator.
+	     * @return {Observable} a new observable with the Operator applied
 	     */
 	    Observable.prototype.lift = function (operator) {
 	        var observable = new Observable();
@@ -637,53 +680,37 @@
 	        return observable;
 	    };
 	    /**
-	     * @method Symbol.observable
-	     * @returns {Observable} this instance of the observable
-	     * @description an interop point defined by the es7-observable spec https://github.com/zenparsing/es-observable
-	     */
-	    Observable.prototype[SymbolShim_1.SymbolShim.observable] = function () {
-	        return this;
-	    };
-	    /**
+	     * Registers handlers for handling emitted values, error and completions from the observable, and
+	     *  executes the observable's subscriber function, which will take action to set up the underlying data stream
 	     * @method subscribe
-	     * @param {Observer|Function} observerOrNext (optional) either an observer defining all functions to be called,
+	     * @param {PartialObserver|Function} observerOrNext (optional) either an observer defining all functions to be called,
 	     *  or the first of three possible handlers, which is the handler for each value emitted from the observable.
 	     * @param {Function} error (optional) a handler for a terminal event resulting from an error. If no error handler is provided,
 	     *  the error will be thrown as unhandled
 	     * @param {Function} complete (optional) a handler for a terminal event resulting from successful completion.
-	     * @returns {Subscription} a subscription reference to the registered handlers
-	     * @description registers handlers for handling emitted values, error and completions from the observable, and
-	     *  executes the observable's subscriber function, which will take action to set up the underlying data stream
+	     * @return {ISubscription} a subscription reference to the registered handlers
 	     */
 	    Observable.prototype.subscribe = function (observerOrNext, error, complete) {
-	        var subscriber;
-	        if (observerOrNext && typeof observerOrNext === 'object') {
-	            if (observerOrNext instanceof Subscriber_1.Subscriber) {
-	                subscriber = observerOrNext;
-	            }
-	            else if (observerOrNext[rxSubscriber_1.rxSubscriber]) {
-	                subscriber = observerOrNext[rxSubscriber_1.rxSubscriber]();
-	            }
-	            else {
-	                subscriber = new Subscriber_1.Subscriber(observerOrNext);
+	        var operator = this.operator;
+	        var sink = toSubscriber_1.toSubscriber(observerOrNext, error, complete);
+	        sink.add(operator ? operator.call(sink, this) : this._subscribe(sink));
+	        if (sink.syncErrorThrowable) {
+	            sink.syncErrorThrowable = false;
+	            if (sink.syncErrorThrown) {
+	                throw sink.syncErrorValue;
 	            }
 	        }
-	        else {
-	            var next = observerOrNext;
-	            subscriber = Subscriber_1.Subscriber.create(next, error, complete);
-	        }
-	        subscriber.add(this._subscribe(subscriber));
-	        return subscriber;
+	        return sink;
 	    };
 	    /**
 	     * @method forEach
 	     * @param {Function} next a handler for each value emitted by the observable
-	     * @param {any} [thisArg] a `this` context for the `next` handler function
 	     * @param {PromiseConstructor} [PromiseCtor] a constructor function used to instantiate the Promise
-	     * @returns {Promise} a promise that either resolves on observable completion or
+	     * @return {Promise} a promise that either resolves on observable completion or
 	     *  rejects with the handled error
 	     */
-	    Observable.prototype.forEach = function (next, thisArg, PromiseCtor) {
+	    Observable.prototype.forEach = function (next, PromiseCtor) {
+	        var _this = this;
 	        if (!PromiseCtor) {
 	            if (root_1.root.Rx && root_1.root.Rx.config && root_1.root.Rx.config.Promise) {
 	                PromiseCtor = root_1.root.Rx.config.Promise;
@@ -695,43 +722,59 @@
 	        if (!PromiseCtor) {
 	            throw new Error('no Promise impl found');
 	        }
-	        var nextHandler;
-	        if (thisArg) {
-	            nextHandler = function nextHandlerFn(value) {
-	                var _a = nextHandlerFn, thisArg = _a.thisArg, next = _a.next;
-	                return next.call(thisArg, value);
-	            };
-	            nextHandler.thisArg = thisArg;
-	            nextHandler.next = next;
-	        }
-	        else {
-	            nextHandler = next;
-	        }
-	        var promiseCallback = function promiseCallbackFn(resolve, reject) {
-	            var _a = promiseCallbackFn, source = _a.source, nextHandler = _a.nextHandler;
-	            source.subscribe(nextHandler, reject, resolve);
-	        };
-	        promiseCallback.source = this;
-	        promiseCallback.nextHandler = nextHandler;
-	        return new PromiseCtor(promiseCallback);
+	        return new PromiseCtor(function (resolve, reject) {
+	            var subscription = _this.subscribe(function (value) {
+	                if (subscription) {
+	                    // if there is a subscription, then we can surmise
+	                    // the next handling is asynchronous. Any errors thrown
+	                    // need to be rejected explicitly and unsubscribe must be
+	                    // called manually
+	                    try {
+	                        next(value);
+	                    }
+	                    catch (err) {
+	                        reject(err);
+	                        subscription.unsubscribe();
+	                    }
+	                }
+	                else {
+	                    // if there is NO subscription, then we're getting a nexted
+	                    // value synchronously during subscription. We can just call it.
+	                    // If it errors, Observable's `subscribe` imple will ensure the
+	                    // unsubscription logic is called, then synchronously rethrow the error.
+	                    // After that, Promise will trap the error and send it
+	                    // down the rejection path.
+	                    next(value);
+	                }
+	            }, reject, resolve);
+	        });
 	    };
 	    Observable.prototype._subscribe = function (subscriber) {
-	        return this.source._subscribe(this.operator.call(subscriber));
+	        return this.source.subscribe(subscriber);
+	    };
+	    /**
+	     * An interop point defined by the es7-observable spec https://github.com/zenparsing/es-observable
+	     * @method Symbol.observable
+	     * @return {Observable} this instance of the observable
+	     */
+	    Observable.prototype[observable_1.$$observable] = function () {
+	        return this;
 	    };
 	    // HACK: Since TypeScript inherits static properties too, we have to
 	    // fight against TypeScript here so Subject can have a different static create signature
 	    /**
-	     * @static
+	     * Creates a new cold Observable by calling the Observable constructor
+	     * @static true
+	     * @owner Observable
 	     * @method create
 	     * @param {Function} subscribe? the subscriber function to be passed to the Observable constructor
-	     * @returns {Observable} a new cold observable
-	     * @description creates a new cold Observable by calling the Observable constructor
+	     * @return {Observable} a new cold observable
 	     */
 	    Observable.create = function (subscribe) {
 	        return new Observable(subscribe);
 	    };
 	    return Observable;
-	})();
+	}());
 	exports.Observable = Observable;
 	//# sourceMappingURL=Observable.js.map
 
@@ -739,352 +782,8 @@
 /* 5 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var __extends = (this && this.__extends) || function (d, b) {
-	    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
-	    function __() { this.constructor = d; }
-	    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
-	};
-	var noop_1 = __webpack_require__(6);
-	var throwError_1 = __webpack_require__(7);
-	var tryOrOnError_1 = __webpack_require__(8);
-	var Subscription_1 = __webpack_require__(9);
-	var rxSubscriber_1 = __webpack_require__(10);
-	var Subscriber = (function (_super) {
-	    __extends(Subscriber, _super);
-	    function Subscriber(destination) {
-	        _super.call(this);
-	        this.destination = destination;
-	        this._isUnsubscribed = false;
-	        if (!this.destination) {
-	            return;
-	        }
-	        var subscription = destination._subscription;
-	        if (subscription) {
-	            this._subscription = subscription;
-	        }
-	        else if (destination instanceof Subscriber) {
-	            this._subscription = destination;
-	        }
-	    }
-	    Subscriber.prototype[rxSubscriber_1.rxSubscriber] = function () {
-	        return this;
-	    };
-	    Object.defineProperty(Subscriber.prototype, "isUnsubscribed", {
-	        get: function () {
-	            var subscription = this._subscription;
-	            if (subscription) {
-	                // route to the shared Subscription if it exists
-	                return this._isUnsubscribed || subscription.isUnsubscribed;
-	            }
-	            else {
-	                return this._isUnsubscribed;
-	            }
-	        },
-	        set: function (value) {
-	            var subscription = this._subscription;
-	            if (subscription) {
-	                // route to the shared Subscription if it exists
-	                subscription.isUnsubscribed = Boolean(value);
-	            }
-	            else {
-	                this._isUnsubscribed = Boolean(value);
-	            }
-	        },
-	        enumerable: true,
-	        configurable: true
-	    });
-	    Subscriber.create = function (next, error, complete) {
-	        var subscriber = new Subscriber();
-	        subscriber._next = (typeof next === 'function') && tryOrOnError_1.tryOrOnError(next) || noop_1.noop;
-	        subscriber._error = (typeof error === 'function') && error || throwError_1.throwError;
-	        subscriber._complete = (typeof complete === 'function') && complete || noop_1.noop;
-	        return subscriber;
-	    };
-	    Subscriber.prototype.add = function (sub) {
-	        // route add to the shared Subscription if it exists
-	        var _subscription = this._subscription;
-	        if (_subscription) {
-	            _subscription.add(sub);
-	        }
-	        else {
-	            _super.prototype.add.call(this, sub);
-	        }
-	    };
-	    Subscriber.prototype.remove = function (sub) {
-	        // route remove to the shared Subscription if it exists
-	        if (this._subscription) {
-	            this._subscription.remove(sub);
-	        }
-	        else {
-	            _super.prototype.remove.call(this, sub);
-	        }
-	    };
-	    Subscriber.prototype.unsubscribe = function () {
-	        if (this._isUnsubscribed) {
-	            return;
-	        }
-	        else if (this._subscription) {
-	            this._isUnsubscribed = true;
-	        }
-	        else {
-	            _super.prototype.unsubscribe.call(this);
-	        }
-	    };
-	    Subscriber.prototype._next = function (value) {
-	        var destination = this.destination;
-	        if (destination.next) {
-	            destination.next(value);
-	        }
-	    };
-	    Subscriber.prototype._error = function (err) {
-	        var destination = this.destination;
-	        if (destination.error) {
-	            destination.error(err);
-	        }
-	    };
-	    Subscriber.prototype._complete = function () {
-	        var destination = this.destination;
-	        if (destination.complete) {
-	            destination.complete();
-	        }
-	    };
-	    Subscriber.prototype.next = function (value) {
-	        if (!this.isUnsubscribed) {
-	            this._next(value);
-	        }
-	    };
-	    Subscriber.prototype.error = function (err) {
-	        if (!this.isUnsubscribed) {
-	            this._error(err);
-	            this.unsubscribe();
-	        }
-	    };
-	    Subscriber.prototype.complete = function () {
-	        if (!this.isUnsubscribed) {
-	            this._complete();
-	            this.unsubscribe();
-	        }
-	    };
-	    return Subscriber;
-	})(Subscription_1.Subscription);
-	exports.Subscriber = Subscriber;
-	//# sourceMappingURL=Subscriber.js.map
-
-/***/ },
-/* 6 */
-/***/ function(module, exports) {
-
-	/* tslint:disable:no-empty */
-	function noop() { }
-	exports.noop = noop;
-	//# sourceMappingURL=noop.js.map
-
-/***/ },
-/* 7 */
-/***/ function(module, exports) {
-
-	function throwError(e) { throw e; }
-	exports.throwError = throwError;
-	//# sourceMappingURL=throwError.js.map
-
-/***/ },
-/* 8 */
-/***/ function(module, exports) {
-
-	function tryOrOnError(target) {
-	    function tryCatcher() {
-	        try {
-	            tryCatcher.target.apply(this, arguments);
-	        }
-	        catch (e) {
-	            this.error(e);
-	        }
-	    }
-	    tryCatcher.target = target;
-	    return tryCatcher;
-	}
-	exports.tryOrOnError = tryOrOnError;
-	//# sourceMappingURL=tryOrOnError.js.map
-
-/***/ },
-/* 9 */
-/***/ function(module, exports, __webpack_require__) {
-
-	var noop_1 = __webpack_require__(6);
-	var Subscription = (function () {
-	    function Subscription(_unsubscribe) {
-	        this.isUnsubscribed = false;
-	        if (_unsubscribe) {
-	            this._unsubscribe = _unsubscribe;
-	        }
-	    }
-	    Subscription.prototype._unsubscribe = function () {
-	        noop_1.noop();
-	    };
-	    Subscription.prototype.unsubscribe = function () {
-	        if (this.isUnsubscribed) {
-	            return;
-	        }
-	        this.isUnsubscribed = true;
-	        var unsubscribe = this._unsubscribe;
-	        var subscriptions = this._subscriptions;
-	        this._subscriptions = void 0;
-	        if (unsubscribe) {
-	            unsubscribe.call(this);
-	        }
-	        if (subscriptions != null) {
-	            var index = -1;
-	            var len = subscriptions.length;
-	            while (++index < len) {
-	                subscriptions[index].unsubscribe();
-	            }
-	        }
-	    };
-	    Subscription.prototype.add = function (subscription) {
-	        // return early if:
-	        //  1. the subscription is null
-	        //  2. we're attempting to add our this
-	        //  3. we're attempting to add the static `empty` Subscription
-	        if (!subscription || (subscription === this) || (subscription === Subscription.EMPTY)) {
-	            return;
-	        }
-	        var sub = subscription;
-	        switch (typeof subscription) {
-	            case 'function':
-	                sub = new Subscription(subscription);
-	            case 'object':
-	                if (sub.isUnsubscribed || typeof sub.unsubscribe !== 'function') {
-	                    break;
-	                }
-	                else if (this.isUnsubscribed) {
-	                    sub.unsubscribe();
-	                }
-	                else {
-	                    var subscriptions = this._subscriptions || (this._subscriptions = []);
-	                    subscriptions.push(sub);
-	                }
-	                break;
-	            default:
-	                throw new Error('Unrecognized subscription ' + subscription + ' added to Subscription.');
-	        }
-	    };
-	    Subscription.prototype.remove = function (subscription) {
-	        // return early if:
-	        //  1. the subscription is null
-	        //  2. we're attempting to remove ourthis
-	        //  3. we're attempting to remove the static `empty` Subscription
-	        if (subscription == null || (subscription === this) || (subscription === Subscription.EMPTY)) {
-	            return;
-	        }
-	        var subscriptions = this._subscriptions;
-	        if (subscriptions) {
-	            var subscriptionIndex = subscriptions.indexOf(subscription);
-	            if (subscriptionIndex !== -1) {
-	                subscriptions.splice(subscriptionIndex, 1);
-	            }
-	        }
-	    };
-	    Subscription.EMPTY = (function (empty) {
-	        empty.isUnsubscribed = true;
-	        return empty;
-	    }(new Subscription()));
-	    return Subscription;
-	})();
-	exports.Subscription = Subscription;
-	//# sourceMappingURL=Subscription.js.map
-
-/***/ },
-/* 10 */
-/***/ function(module, exports, __webpack_require__) {
-
-	var SymbolShim_1 = __webpack_require__(11);
-	/**
-	 * rxSubscriber symbol is a symbol for retreiving an "Rx safe" Observer from an object
-	 * "Rx safety" can be defined as an object that has all of the traits of an Rx Subscriber,
-	 * including the ability to add and remove subscriptions to the subscription chain and
-	 * guarantees involving event triggering (can't "next" after unsubscription, etc).
-	 */
-	exports.rxSubscriber = SymbolShim_1.SymbolShim.for('rxSubscriber');
-	//# sourceMappingURL=rxSubscriber.js.map
-
-/***/ },
-/* 11 */
-/***/ function(module, exports, __webpack_require__) {
-
-	var root_1 = __webpack_require__(12);
-	function polyfillSymbol(root) {
-	    var Symbol = ensureSymbol(root);
-	    ensureIterator(Symbol, root);
-	    ensureObservable(Symbol);
-	    ensureFor(Symbol);
-	    return Symbol;
-	}
-	exports.polyfillSymbol = polyfillSymbol;
-	function ensureFor(Symbol) {
-	    if (!Symbol.for) {
-	        Symbol.for = symbolForPolyfill;
-	    }
-	}
-	exports.ensureFor = ensureFor;
-	var id = 0;
-	function ensureSymbol(root) {
-	    if (!root.Symbol) {
-	        root.Symbol = function symbolFuncPolyfill(description) {
-	            return "@@Symbol(" + description + "):" + id++;
-	        };
-	    }
-	    return root.Symbol;
-	}
-	exports.ensureSymbol = ensureSymbol;
-	function symbolForPolyfill(key) {
-	    return '@@' + key;
-	}
-	exports.symbolForPolyfill = symbolForPolyfill;
-	function ensureIterator(Symbol, root) {
-	    if (!Symbol.iterator) {
-	        if (typeof Symbol.for === 'function') {
-	            Symbol.iterator = Symbol.for('iterator');
-	        }
-	        else if (root.Set && typeof new root.Set()['@@iterator'] === 'function') {
-	            // Bug for mozilla version
-	            Symbol.iterator = '@@iterator';
-	        }
-	        else if (root.Map) {
-	            // es6-shim specific logic
-	            var keys = Object.getOwnPropertyNames(root.Map.prototype);
-	            for (var i = 0; i < keys.length; ++i) {
-	                var key = keys[i];
-	                if (key !== 'entries' && key !== 'size' && root.Map.prototype[key] === root.Map.prototype['entries']) {
-	                    Symbol.iterator = key;
-	                    break;
-	                }
-	            }
-	        }
-	        else {
-	            Symbol.iterator = '@@iterator';
-	        }
-	    }
-	}
-	exports.ensureIterator = ensureIterator;
-	function ensureObservable(Symbol) {
-	    if (!Symbol.observable) {
-	        if (typeof Symbol.for === 'function') {
-	            Symbol.observable = Symbol.for('observable');
-	        }
-	        else {
-	            Symbol.observable = '@@observable';
-	        }
-	    }
-	}
-	exports.ensureObservable = ensureObservable;
-	exports.SymbolShim = polyfillSymbol(root_1.root);
-	//# sourceMappingURL=SymbolShim.js.map
-
-/***/ },
-/* 12 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/* WEBPACK VAR INJECTION */(function(module, global) {var objectTypes = {
+	/* WEBPACK VAR INJECTION */(function(module, global) {"use strict";
+	var objectTypes = {
 	    'boolean': false,
 	    'function': true,
 	    'object': true,
@@ -1101,10 +800,10 @@
 	    exports.root = freeGlobal;
 	}
 	//# sourceMappingURL=root.js.map
-	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(13)(module), (function() { return this; }())))
+	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(6)(module), (function() { return this; }())))
 
 /***/ },
-/* 13 */
+/* 6 */
 /***/ function(module, exports) {
 
 	module.exports = function(module) {
@@ -1120,85 +819,499 @@
 
 
 /***/ },
-/* 14 */
+/* 7 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var Observable_1 = __webpack_require__(4);
-	var fromEvent_1 = __webpack_require__(15);
-	Observable_1.Observable.fromEvent = fromEvent_1.FromEventObservable.create;
-	//# sourceMappingURL=fromEvent.js.map
+	"use strict";
+	var root_1 = __webpack_require__(5);
+	var Symbol = root_1.root.Symbol;
+	if (typeof Symbol === 'function') {
+	    if (Symbol.observable) {
+	        exports.$$observable = Symbol.observable;
+	    }
+	    else {
+	        if (typeof Symbol.for === 'function') {
+	            exports.$$observable = Symbol.for('observable');
+	        }
+	        else {
+	            exports.$$observable = Symbol('observable');
+	        }
+	        Symbol.observable = exports.$$observable;
+	    }
+	}
+	else {
+	    exports.$$observable = '@@observable';
+	}
+	//# sourceMappingURL=observable.js.map
 
 /***/ },
-/* 15 */
+/* 8 */
 /***/ function(module, exports, __webpack_require__) {
 
+	"use strict";
+	var Subscriber_1 = __webpack_require__(9);
+	var rxSubscriber_1 = __webpack_require__(17);
+	function toSubscriber(nextOrObserver, error, complete) {
+	    if (nextOrObserver && typeof nextOrObserver === 'object') {
+	        if (nextOrObserver instanceof Subscriber_1.Subscriber) {
+	            return nextOrObserver;
+	        }
+	        else if (typeof nextOrObserver[rxSubscriber_1.$$rxSubscriber] === 'function') {
+	            return nextOrObserver[rxSubscriber_1.$$rxSubscriber]();
+	        }
+	    }
+	    return new Subscriber_1.Subscriber(nextOrObserver, error, complete);
+	}
+	exports.toSubscriber = toSubscriber;
+	//# sourceMappingURL=toSubscriber.js.map
+
+/***/ },
+/* 9 */
+/***/ function(module, exports, __webpack_require__) {
+
+	"use strict";
 	var __extends = (this && this.__extends) || function (d, b) {
 	    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
 	    function __() { this.constructor = d; }
 	    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
 	};
-	var Observable_1 = __webpack_require__(4);
-	var tryCatch_1 = __webpack_require__(16);
-	var errorObject_1 = __webpack_require__(17);
-	var Subscription_1 = __webpack_require__(9);
-	var FromEventObservable = (function (_super) {
-	    __extends(FromEventObservable, _super);
-	    function FromEventObservable(sourceObj, eventName, selector) {
+	var isFunction_1 = __webpack_require__(10);
+	var Subscription_1 = __webpack_require__(11);
+	var rxSubscriber_1 = __webpack_require__(17);
+	var Observer_1 = __webpack_require__(18);
+	/**
+	 * Implements the {@link Observer} interface and extends the
+	 * {@link Subscription} class. While the {@link Observer} is the public API for
+	 * consuming the values of an {@link Observable}, all Observers get converted to
+	 * a Subscriber, in order to provide Subscription-like capabilities such as
+	 * `unsubscribe`. Subscriber is a common type in RxJS, and crucial for
+	 * implementing operators, but it is rarely used as a public API.
+	 *
+	 * @class Subscriber<T>
+	 */
+	var Subscriber = (function (_super) {
+	    __extends(Subscriber, _super);
+	    /**
+	     * @param {Observer|function(value: T): void} [destinationOrNext] A partially
+	     * defined Observer or a `next` callback function.
+	     * @param {function(e: ?any): void} [error] The `error` callback of an
+	     * Observer.
+	     * @param {function(): void} [complete] The `complete` callback of an
+	     * Observer.
+	     */
+	    function Subscriber(destinationOrNext, error, complete) {
 	        _super.call(this);
-	        this.sourceObj = sourceObj;
-	        this.eventName = eventName;
-	        this.selector = selector;
+	        this.syncErrorValue = null;
+	        this.syncErrorThrown = false;
+	        this.syncErrorThrowable = false;
+	        this.isStopped = false;
+	        switch (arguments.length) {
+	            case 0:
+	                this.destination = Observer_1.empty;
+	                break;
+	            case 1:
+	                if (!destinationOrNext) {
+	                    this.destination = Observer_1.empty;
+	                    break;
+	                }
+	                if (typeof destinationOrNext === 'object') {
+	                    if (destinationOrNext instanceof Subscriber) {
+	                        this.destination = destinationOrNext;
+	                        this.destination.add(this);
+	                    }
+	                    else {
+	                        this.syncErrorThrowable = true;
+	                        this.destination = new SafeSubscriber(this, destinationOrNext);
+	                    }
+	                    break;
+	                }
+	            default:
+	                this.syncErrorThrowable = true;
+	                this.destination = new SafeSubscriber(this, destinationOrNext, error, complete);
+	                break;
+	        }
 	    }
-	    FromEventObservable.create = function (sourceObj, eventName, selector) {
-	        return new FromEventObservable(sourceObj, eventName, selector);
+	    /**
+	     * A static factory for a Subscriber, given a (potentially partial) definition
+	     * of an Observer.
+	     * @param {function(x: ?T): void} [next] The `next` callback of an Observer.
+	     * @param {function(e: ?any): void} [error] The `error` callback of an
+	     * Observer.
+	     * @param {function(): void} [complete] The `complete` callback of an
+	     * Observer.
+	     * @return {Subscriber<T>} A Subscriber wrapping the (partially defined)
+	     * Observer represented by the given arguments.
+	     */
+	    Subscriber.create = function (next, error, complete) {
+	        var subscriber = new Subscriber(next, error, complete);
+	        subscriber.syncErrorThrowable = false;
+	        return subscriber;
 	    };
-	    FromEventObservable.setupSubscription = function (sourceObj, eventName, handler, subscriber) {
-	        var unsubscribe;
-	        var tag = sourceObj.toString();
-	        if (tag === '[object NodeList]' || tag === '[object HTMLCollection]') {
-	            for (var i = 0, len = sourceObj.length; i < len; i++) {
-	                FromEventObservable.setupSubscription(sourceObj[i], eventName, handler, subscriber);
+	    /**
+	     * The {@link Observer} callback to receive notifications of type `next` from
+	     * the Observable, with a value. The Observable may call this method 0 or more
+	     * times.
+	     * @param {T} [value] The `next` value.
+	     * @return {void}
+	     */
+	    Subscriber.prototype.next = function (value) {
+	        if (!this.isStopped) {
+	            this._next(value);
+	        }
+	    };
+	    /**
+	     * The {@link Observer} callback to receive notifications of type `error` from
+	     * the Observable, with an attached {@link Error}. Notifies the Observer that
+	     * the Observable has experienced an error condition.
+	     * @param {any} [err] The `error` exception.
+	     * @return {void}
+	     */
+	    Subscriber.prototype.error = function (err) {
+	        if (!this.isStopped) {
+	            this.isStopped = true;
+	            this._error(err);
+	        }
+	    };
+	    /**
+	     * The {@link Observer} callback to receive a valueless notification of type
+	     * `complete` from the Observable. Notifies the Observer that the Observable
+	     * has finished sending push-based notifications.
+	     * @return {void}
+	     */
+	    Subscriber.prototype.complete = function () {
+	        if (!this.isStopped) {
+	            this.isStopped = true;
+	            this._complete();
+	        }
+	    };
+	    Subscriber.prototype.unsubscribe = function () {
+	        if (this.isUnsubscribed) {
+	            return;
+	        }
+	        this.isStopped = true;
+	        _super.prototype.unsubscribe.call(this);
+	    };
+	    Subscriber.prototype._next = function (value) {
+	        this.destination.next(value);
+	    };
+	    Subscriber.prototype._error = function (err) {
+	        this.destination.error(err);
+	        this.unsubscribe();
+	    };
+	    Subscriber.prototype._complete = function () {
+	        this.destination.complete();
+	        this.unsubscribe();
+	    };
+	    Subscriber.prototype[rxSubscriber_1.$$rxSubscriber] = function () {
+	        return this;
+	    };
+	    return Subscriber;
+	}(Subscription_1.Subscription));
+	exports.Subscriber = Subscriber;
+	/**
+	 * We need this JSDoc comment for affecting ESDoc.
+	 * @ignore
+	 * @extends {Ignored}
+	 */
+	var SafeSubscriber = (function (_super) {
+	    __extends(SafeSubscriber, _super);
+	    function SafeSubscriber(_parent, observerOrNext, error, complete) {
+	        _super.call(this);
+	        this._parent = _parent;
+	        var next;
+	        var context = this;
+	        if (isFunction_1.isFunction(observerOrNext)) {
+	            next = observerOrNext;
+	        }
+	        else if (observerOrNext) {
+	            context = observerOrNext;
+	            next = observerOrNext.next;
+	            error = observerOrNext.error;
+	            complete = observerOrNext.complete;
+	            if (isFunction_1.isFunction(context.unsubscribe)) {
+	                this.add(context.unsubscribe.bind(context));
+	            }
+	            context.unsubscribe = this.unsubscribe.bind(this);
+	        }
+	        this._context = context;
+	        this._next = next;
+	        this._error = error;
+	        this._complete = complete;
+	    }
+	    SafeSubscriber.prototype.next = function (value) {
+	        if (!this.isStopped && this._next) {
+	            var _parent = this._parent;
+	            if (!_parent.syncErrorThrowable) {
+	                this.__tryOrUnsub(this._next, value);
+	            }
+	            else if (this.__tryOrSetError(_parent, this._next, value)) {
+	                this.unsubscribe();
 	            }
 	        }
-	        else if (typeof sourceObj.addEventListener === 'function' && typeof sourceObj.removeEventListener === 'function') {
-	            sourceObj.addEventListener(eventName, handler);
-	            unsubscribe = function () { return sourceObj.removeEventListener(eventName, handler); };
-	        }
-	        else if (typeof sourceObj.on === 'function' && typeof sourceObj.off === 'function') {
-	            sourceObj.on(eventName, handler);
-	            unsubscribe = function () { return sourceObj.off(eventName, handler); };
-	        }
-	        else if (typeof sourceObj.addListener === 'function' && typeof sourceObj.removeListener === 'function') {
-	            sourceObj.addListener(eventName, handler);
-	            unsubscribe = function () { return sourceObj.removeListener(eventName, handler); };
-	        }
-	        subscriber.add(new Subscription_1.Subscription(unsubscribe));
 	    };
-	    FromEventObservable.prototype._subscribe = function (subscriber) {
-	        var sourceObj = this.sourceObj;
-	        var eventName = this.eventName;
-	        var selector = this.selector;
-	        var handler = selector ? function (e) {
-	            var result = tryCatch_1.tryCatch(selector)(e);
-	            if (result === errorObject_1.errorObject) {
-	                subscriber.error(result.e);
+	    SafeSubscriber.prototype.error = function (err) {
+	        if (!this.isStopped) {
+	            var _parent = this._parent;
+	            if (this._error) {
+	                if (!_parent.syncErrorThrowable) {
+	                    this.__tryOrUnsub(this._error, err);
+	                    this.unsubscribe();
+	                }
+	                else {
+	                    this.__tryOrSetError(_parent, this._error, err);
+	                    this.unsubscribe();
+	                }
+	            }
+	            else if (!_parent.syncErrorThrowable) {
+	                this.unsubscribe();
+	                throw err;
 	            }
 	            else {
-	                subscriber.next(result);
+	                _parent.syncErrorValue = err;
+	                _parent.syncErrorThrown = true;
+	                this.unsubscribe();
 	            }
-	        } : function (e) { return subscriber.next(e); };
-	        FromEventObservable.setupSubscription(sourceObj, eventName, handler, subscriber);
+	        }
 	    };
-	    return FromEventObservable;
-	})(Observable_1.Observable);
-	exports.FromEventObservable = FromEventObservable;
-	//# sourceMappingURL=fromEvent.js.map
+	    SafeSubscriber.prototype.complete = function () {
+	        if (!this.isStopped) {
+	            var _parent = this._parent;
+	            if (this._complete) {
+	                if (!_parent.syncErrorThrowable) {
+	                    this.__tryOrUnsub(this._complete);
+	                    this.unsubscribe();
+	                }
+	                else {
+	                    this.__tryOrSetError(_parent, this._complete);
+	                    this.unsubscribe();
+	                }
+	            }
+	            else {
+	                this.unsubscribe();
+	            }
+	        }
+	    };
+	    SafeSubscriber.prototype.__tryOrUnsub = function (fn, value) {
+	        try {
+	            fn.call(this._context, value);
+	        }
+	        catch (err) {
+	            this.unsubscribe();
+	            throw err;
+	        }
+	    };
+	    SafeSubscriber.prototype.__tryOrSetError = function (parent, fn, value) {
+	        try {
+	            fn.call(this._context, value);
+	        }
+	        catch (err) {
+	            parent.syncErrorValue = err;
+	            parent.syncErrorThrown = true;
+	            return true;
+	        }
+	        return false;
+	    };
+	    SafeSubscriber.prototype._unsubscribe = function () {
+	        var _parent = this._parent;
+	        this._context = null;
+	        this._parent = null;
+	        _parent.unsubscribe();
+	    };
+	    return SafeSubscriber;
+	}(Subscriber));
+	//# sourceMappingURL=Subscriber.js.map
 
 /***/ },
-/* 16 */
+/* 10 */
+/***/ function(module, exports) {
+
+	"use strict";
+	function isFunction(x) {
+	    return typeof x === 'function';
+	}
+	exports.isFunction = isFunction;
+	//# sourceMappingURL=isFunction.js.map
+
+/***/ },
+/* 11 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var errorObject_1 = __webpack_require__(17);
+	"use strict";
+	var isArray_1 = __webpack_require__(12);
+	var isObject_1 = __webpack_require__(13);
+	var isFunction_1 = __webpack_require__(10);
+	var tryCatch_1 = __webpack_require__(14);
+	var errorObject_1 = __webpack_require__(15);
+	var UnsubscriptionError_1 = __webpack_require__(16);
+	/**
+	 * Represents a disposable resource, such as the execution of an Observable. A
+	 * Subscription has one important method, `unsubscribe`, that takes no argument
+	 * and just disposes the resource held by the subscription.
+	 *
+	 * Additionally, subscriptions may be grouped together through the `add()`
+	 * method, which will attach a child Subscription to the current Subscription.
+	 * When a Subscription is unsubscribed, all its children (and its grandchildren)
+	 * will be unsubscribed as well.
+	 *
+	 * @class Subscription
+	 */
+	var Subscription = (function () {
+	    /**
+	     * @param {function(): void} [unsubscribe] A function describing how to
+	     * perform the disposal of resources when the `unsubscribe` method is called.
+	     */
+	    function Subscription(unsubscribe) {
+	        /**
+	         * A flag to indicate whether this Subscription has already been unsubscribed.
+	         * @type {boolean}
+	         */
+	        this.isUnsubscribed = false;
+	        if (unsubscribe) {
+	            this._unsubscribe = unsubscribe;
+	        }
+	    }
+	    /**
+	     * Disposes the resources held by the subscription. May, for instance, cancel
+	     * an ongoing Observable execution or cancel any other type of work that
+	     * started when the Subscription was created.
+	     * @return {void}
+	     */
+	    Subscription.prototype.unsubscribe = function () {
+	        var hasErrors = false;
+	        var errors;
+	        if (this.isUnsubscribed) {
+	            return;
+	        }
+	        this.isUnsubscribed = true;
+	        var _a = this, _unsubscribe = _a._unsubscribe, _subscriptions = _a._subscriptions;
+	        this._subscriptions = null;
+	        if (isFunction_1.isFunction(_unsubscribe)) {
+	            var trial = tryCatch_1.tryCatch(_unsubscribe).call(this);
+	            if (trial === errorObject_1.errorObject) {
+	                hasErrors = true;
+	                (errors = errors || []).push(errorObject_1.errorObject.e);
+	            }
+	        }
+	        if (isArray_1.isArray(_subscriptions)) {
+	            var index = -1;
+	            var len = _subscriptions.length;
+	            while (++index < len) {
+	                var sub = _subscriptions[index];
+	                if (isObject_1.isObject(sub)) {
+	                    var trial = tryCatch_1.tryCatch(sub.unsubscribe).call(sub);
+	                    if (trial === errorObject_1.errorObject) {
+	                        hasErrors = true;
+	                        errors = errors || [];
+	                        var err = errorObject_1.errorObject.e;
+	                        if (err instanceof UnsubscriptionError_1.UnsubscriptionError) {
+	                            errors = errors.concat(err.errors);
+	                        }
+	                        else {
+	                            errors.push(err);
+	                        }
+	                    }
+	                }
+	            }
+	        }
+	        if (hasErrors) {
+	            throw new UnsubscriptionError_1.UnsubscriptionError(errors);
+	        }
+	    };
+	    /**
+	     * Adds a tear down to be called during the unsubscribe() of this
+	     * Subscription.
+	     *
+	     * If the tear down being added is a subscription that is already
+	     * unsubscribed, is the same reference `add` is being called on, or is
+	     * `Subscription.EMPTY`, it will not be added.
+	     *
+	     * If this subscription is already in an `isUnsubscribed` state, the passed
+	     * tear down logic will be executed immediately.
+	     *
+	     * @param {TeardownLogic} teardown The additional logic to execute on
+	     * teardown.
+	     * @return {Subscription} Returns the Subscription used or created to be
+	     * added to the inner subscriptions list. This Subscription can be used with
+	     * `remove()` to remove the passed teardown logic from the inner subscriptions
+	     * list.
+	     */
+	    Subscription.prototype.add = function (teardown) {
+	        if (!teardown || (teardown === this) || (teardown === Subscription.EMPTY)) {
+	            return;
+	        }
+	        var sub = teardown;
+	        switch (typeof teardown) {
+	            case 'function':
+	                sub = new Subscription(teardown);
+	            case 'object':
+	                if (sub.isUnsubscribed || typeof sub.unsubscribe !== 'function') {
+	                    break;
+	                }
+	                else if (this.isUnsubscribed) {
+	                    sub.unsubscribe();
+	                }
+	                else {
+	                    (this._subscriptions || (this._subscriptions = [])).push(sub);
+	                }
+	                break;
+	            default:
+	                throw new Error('Unrecognized teardown ' + teardown + ' added to Subscription.');
+	        }
+	        return sub;
+	    };
+	    /**
+	     * Removes a Subscription from the internal list of subscriptions that will
+	     * unsubscribe during the unsubscribe process of this Subscription.
+	     * @param {Subscription} subscription The subscription to remove.
+	     * @return {void}
+	     */
+	    Subscription.prototype.remove = function (subscription) {
+	        // HACK: This might be redundant because of the logic in `add()`
+	        if (subscription == null || (subscription === this) || (subscription === Subscription.EMPTY)) {
+	            return;
+	        }
+	        var subscriptions = this._subscriptions;
+	        if (subscriptions) {
+	            var subscriptionIndex = subscriptions.indexOf(subscription);
+	            if (subscriptionIndex !== -1) {
+	                subscriptions.splice(subscriptionIndex, 1);
+	            }
+	        }
+	    };
+	    Subscription.EMPTY = (function (empty) {
+	        empty.isUnsubscribed = true;
+	        return empty;
+	    }(new Subscription()));
+	    return Subscription;
+	}());
+	exports.Subscription = Subscription;
+	//# sourceMappingURL=Subscription.js.map
+
+/***/ },
+/* 12 */
+/***/ function(module, exports) {
+
+	"use strict";
+	exports.isArray = Array.isArray || (function (x) { return x && typeof x.length === 'number'; });
+	//# sourceMappingURL=isArray.js.map
+
+/***/ },
+/* 13 */
+/***/ function(module, exports) {
+
+	"use strict";
+	function isObject(x) {
+	    return x != null && typeof x === 'object';
+	}
+	exports.isObject = isObject;
+	//# sourceMappingURL=isObject.js.map
+
+/***/ },
+/* 14 */
+/***/ function(module, exports, __webpack_require__) {
+
+	"use strict";
+	var errorObject_1 = __webpack_require__(15);
 	var tryCatchTarget;
 	function tryCatcher() {
 	    try {
@@ -1218,11 +1331,182 @@
 	//# sourceMappingURL=tryCatch.js.map
 
 /***/ },
-/* 17 */
+/* 15 */
 /***/ function(module, exports) {
 
+	"use strict";
+	// typeof any so that it we don't have to cast when comparing a result to the error object
 	exports.errorObject = { e: {} };
 	//# sourceMappingURL=errorObject.js.map
+
+/***/ },
+/* 16 */
+/***/ function(module, exports) {
+
+	"use strict";
+	var __extends = (this && this.__extends) || function (d, b) {
+	    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+	    function __() { this.constructor = d; }
+	    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+	};
+	/**
+	 * An error thrown when one or more errors have occurred during the
+	 * `unsubscribe` of a {@link Subscription}.
+	 */
+	var UnsubscriptionError = (function (_super) {
+	    __extends(UnsubscriptionError, _super);
+	    function UnsubscriptionError(errors) {
+	        _super.call(this);
+	        this.errors = errors;
+	        this.name = 'UnsubscriptionError';
+	        this.message = errors ? errors.length + " errors occurred during unsubscription:\n" + errors.map(function (err, i) { return ((i + 1) + ") " + err.toString()); }).join('\n') : '';
+	    }
+	    return UnsubscriptionError;
+	}(Error));
+	exports.UnsubscriptionError = UnsubscriptionError;
+	//# sourceMappingURL=UnsubscriptionError.js.map
+
+/***/ },
+/* 17 */
+/***/ function(module, exports, __webpack_require__) {
+
+	"use strict";
+	var root_1 = __webpack_require__(5);
+	var Symbol = root_1.root.Symbol;
+	exports.$$rxSubscriber = (typeof Symbol === 'function' && typeof Symbol.for === 'function') ?
+	    Symbol.for('rxSubscriber') : '@@rxSubscriber';
+	//# sourceMappingURL=rxSubscriber.js.map
+
+/***/ },
+/* 18 */
+/***/ function(module, exports) {
+
+	"use strict";
+	exports.empty = {
+	    isUnsubscribed: true,
+	    next: function (value) { },
+	    error: function (err) { throw err; },
+	    complete: function () { }
+	};
+	//# sourceMappingURL=Observer.js.map
+
+/***/ },
+/* 19 */
+/***/ function(module, exports, __webpack_require__) {
+
+	"use strict";
+	var Observable_1 = __webpack_require__(4);
+	var fromEvent_1 = __webpack_require__(20);
+	Observable_1.Observable.fromEvent = fromEvent_1.fromEvent;
+	//# sourceMappingURL=fromEvent.js.map
+
+/***/ },
+/* 20 */
+/***/ function(module, exports, __webpack_require__) {
+
+	"use strict";
+	var FromEventObservable_1 = __webpack_require__(21);
+	exports.fromEvent = FromEventObservable_1.FromEventObservable.create;
+	//# sourceMappingURL=fromEvent.js.map
+
+/***/ },
+/* 21 */
+/***/ function(module, exports, __webpack_require__) {
+
+	"use strict";
+	var __extends = (this && this.__extends) || function (d, b) {
+	    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+	    function __() { this.constructor = d; }
+	    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+	};
+	var Observable_1 = __webpack_require__(4);
+	var tryCatch_1 = __webpack_require__(14);
+	var errorObject_1 = __webpack_require__(15);
+	var Subscription_1 = __webpack_require__(11);
+	function isNodeStyleEventEmmitter(sourceObj) {
+	    return !!sourceObj && typeof sourceObj.addListener === 'function' && typeof sourceObj.removeListener === 'function';
+	}
+	function isJQueryStyleEventEmitter(sourceObj) {
+	    return !!sourceObj && typeof sourceObj.on === 'function' && typeof sourceObj.off === 'function';
+	}
+	function isNodeList(sourceObj) {
+	    return !!sourceObj && sourceObj.toString() === '[object NodeList]';
+	}
+	function isHTMLCollection(sourceObj) {
+	    return !!sourceObj && sourceObj.toString() === '[object HTMLCollection]';
+	}
+	function isEventTarget(sourceObj) {
+	    return !!sourceObj && typeof sourceObj.addEventListener === 'function' && typeof sourceObj.removeEventListener === 'function';
+	}
+	/**
+	 * We need this JSDoc comment for affecting ESDoc.
+	 * @extends {Ignored}
+	 * @hide true
+	 */
+	var FromEventObservable = (function (_super) {
+	    __extends(FromEventObservable, _super);
+	    function FromEventObservable(sourceObj, eventName, selector) {
+	        _super.call(this);
+	        this.sourceObj = sourceObj;
+	        this.eventName = eventName;
+	        this.selector = selector;
+	    }
+	    /**
+	     * @param sourceObj
+	     * @param eventName
+	     * @param selector
+	     * @return {FromEventObservable}
+	     * @static true
+	     * @name fromEvent
+	     * @owner Observable
+	     */
+	    FromEventObservable.create = function (sourceObj, eventName, selector) {
+	        return new FromEventObservable(sourceObj, eventName, selector);
+	    };
+	    FromEventObservable.setupSubscription = function (sourceObj, eventName, handler, subscriber) {
+	        var unsubscribe;
+	        if (isNodeList(sourceObj) || isHTMLCollection(sourceObj)) {
+	            for (var i = 0, len = sourceObj.length; i < len; i++) {
+	                FromEventObservable.setupSubscription(sourceObj[i], eventName, handler, subscriber);
+	            }
+	        }
+	        else if (isEventTarget(sourceObj)) {
+	            sourceObj.addEventListener(eventName, handler);
+	            unsubscribe = function () { return sourceObj.removeEventListener(eventName, handler); };
+	        }
+	        else if (isJQueryStyleEventEmitter(sourceObj)) {
+	            sourceObj.on(eventName, handler);
+	            unsubscribe = function () { return sourceObj.off(eventName, handler); };
+	        }
+	        else if (isNodeStyleEventEmmitter(sourceObj)) {
+	            sourceObj.addListener(eventName, handler);
+	            unsubscribe = function () { return sourceObj.removeListener(eventName, handler); };
+	        }
+	        subscriber.add(new Subscription_1.Subscription(unsubscribe));
+	    };
+	    FromEventObservable.prototype._subscribe = function (subscriber) {
+	        var sourceObj = this.sourceObj;
+	        var eventName = this.eventName;
+	        var selector = this.selector;
+	        var handler = selector ? function () {
+	            var args = [];
+	            for (var _i = 0; _i < arguments.length; _i++) {
+	                args[_i - 0] = arguments[_i];
+	            }
+	            var result = tryCatch_1.tryCatch(selector).apply(void 0, args);
+	            if (result === errorObject_1.errorObject) {
+	                subscriber.error(errorObject_1.errorObject.e);
+	            }
+	            else {
+	                subscriber.next(result);
+	            }
+	        } : function (e) { return subscriber.next(e); };
+	        FromEventObservable.setupSubscription(sourceObj, eventName, handler, subscriber);
+	    };
+	    return FromEventObservable;
+	}(Observable_1.Observable));
+	exports.FromEventObservable = FromEventObservable;
+	//# sourceMappingURL=FromEventObservable.js.map
 
 /***/ }
 /******/ ]);

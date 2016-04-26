@@ -4,8 +4,8 @@ var path = require("path");
 
 module.exports = {
   entry: {
-    "wsabi-client": "./typescript/index.ts",
-    "wsabi-client.min": "./typescript/index.ts"
+    "wsabi-client": "./ts/index.ts",
+    "wsabi-client.min": "./ts/index.ts"
   },
   output: {
     path: "./dist",
