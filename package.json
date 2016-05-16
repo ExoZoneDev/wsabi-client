@@ -1,6 +1,6 @@
 {
   "name": "wsabi-client",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Lightweight client for the hapi websocket layer, wsabi.",
   "main": "js/index.js",
   "typings": "js/index",
@@ -23,12 +23,12 @@
   },
   "homepage": "https://github.com/ExoZoneDev/wsabi-client#readme",
   "dependencies": {
-    "rxjs": "^5.0.0-beta.6"
+    "rxjs": "^5.0.0-beta.7"
   },
   "devDependencies": {
     "ts-loader": "^0.8.2",
-    "typescript": "^1.7.5",
-    "webpack": "^1.12.10",
+    "typescript": "^1.8.10",
+    "webpack": "^1.13.0",
     "ws": "^1.1.0"
   }
 }

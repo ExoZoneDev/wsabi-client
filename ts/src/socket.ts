@@ -10,6 +10,7 @@ export class WsabiSocket extends EventEmitter {
     [key: string]: (data: any) => void;
   } = {};
   private reconnecting: boolean = false;
+  private forceClose: boolean = false;
 
   constructor(public url: string) {
     super();
@@ -20,19 +21,25 @@ export class WsabiSocket extends EventEmitter {
     this._socket.addEventListener("open", () => {
       this.ping();
     });
-    this._socket.addEventListener("message", (res) => this._handleSocketMessage(res.data));
-    this._socket.addEventListener("close", (res) => {
+    this._socket.addEventListener("message", res => this._handleSocketMessage(res.data));
+    this._socket.addEventListener("close", res => {
+      if (this.forceClose) {
+        this.forceClose = false;
+        return;
+      }
+
       this.reconnecting = true;
       setTimeout(() => {
         this.connect();
       }, 10000);
     });
-    this._socket.addEventListener("error", (res) => {
+    this._socket.addEventListener("error", res => {
       console.log("ERROR:", res);
     });
   }
 
   close() {
+    this.forceClose = true;
     this._socket.close();
   }
 
