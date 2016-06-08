@@ -70,6 +70,7 @@
 	        this.messageId = 0;
 	        this.waiting = {};
 	        this.reconnecting = false;
+	        this.forceClose = false;
 	    }
 	    WsabiSocket.prototype.connect = function () {
 	        var _this = this;
@@ -79,6 +80,10 @@
 	        });
 	        this._socket.addEventListener("message", function (res) { return _this._handleSocketMessage(res.data); });
 	        this._socket.addEventListener("close", function (res) {
+	            if (_this.forceClose) {
+	                _this.forceClose = false;
+	                return;
+	            }
 	            _this.reconnecting = true;
 	            setTimeout(function () {
 	                _this.connect();
@@ -89,6 +94,7 @@
 	        });
 	    };
 	    WsabiSocket.prototype.close = function () {
+	        this.forceClose = true;
 	        this._socket.close();
 	    };
 	    WsabiSocket.prototype._handleSocketMessage = function (res) {
@@ -487,7 +493,7 @@
 	"use strict";
 	var socket_1 = __webpack_require__(1);
 	var Observable_1 = __webpack_require__(4);
-	__webpack_require__(19);
+	__webpack_require__(20);
 	var WsabiClient = (function () {
 	    function WsabiClient(url, autoConnect) {
 	        var _this = this;
@@ -532,11 +538,11 @@
 	                            data: data
 	                        }
 	                    ], function (data) {
-	                        if (data[0].statusCode != 200) {
-	                            reject(data[0]);
+	                        if (data[0].statusCode >= 200 && data[0].statusCode < 400) {
+	                            resolve(data);
 	                        }
 	                        else {
-	                            resolve(data);
+	                            reject(data[0]);
 	                        }
 	                    });
 	                });
@@ -551,11 +557,11 @@
 	                        data: data
 	                    }
 	                ], function (data) {
-	                    if (data[0].statusCode != 200) {
-	                        reject(data[0]);
+	                    if (data[0].statusCode >= 200 && data[0].statusCode < 400) {
+	                        resolve(data);
 	                    }
 	                    else {
-	                        resolve(data);
+	                        reject(data[0]);
 	                    }
 	                });
 	            }
@@ -644,8 +650,8 @@
 
 	"use strict";
 	var root_1 = __webpack_require__(5);
-	var observable_1 = __webpack_require__(7);
-	var toSubscriber_1 = __webpack_require__(8);
+	var toSubscriber_1 = __webpack_require__(7);
+	var $$observable = __webpack_require__(18);
 	/**
 	 * A representation of any set of values over any amount of time. This the most basic building block
 	 * of RxJS.
@@ -693,7 +699,12 @@
 	    Observable.prototype.subscribe = function (observerOrNext, error, complete) {
 	        var operator = this.operator;
 	        var sink = toSubscriber_1.toSubscriber(observerOrNext, error, complete);
-	        sink.add(operator ? operator.call(sink, this) : this._subscribe(sink));
+	        if (operator) {
+	            operator.call(sink, this);
+	        }
+	        else {
+	            sink.add(this._subscribe(sink));
+	        }
 	        if (sink.syncErrorThrowable) {
 	            sink.syncErrorThrowable = false;
 	            if (sink.syncErrorThrown) {
@@ -757,7 +768,7 @@
 	     * @method Symbol.observable
 	     * @return {Observable} this instance of the observable
 	     */
-	    Observable.prototype[observable_1.$$observable] = function () {
+	    Observable.prototype[$$observable] = function () {
 	        return this;
 	    };
 	    // HACK: Since TypeScript inherits static properties too, we have to
@@ -823,42 +834,19 @@
 /***/ function(module, exports, __webpack_require__) {
 
 	"use strict";
-	var root_1 = __webpack_require__(5);
-	var Symbol = root_1.root.Symbol;
-	if (typeof Symbol === 'function') {
-	    if (Symbol.observable) {
-	        exports.$$observable = Symbol.observable;
-	    }
-	    else {
-	        if (typeof Symbol.for === 'function') {
-	            exports.$$observable = Symbol.for('observable');
-	        }
-	        else {
-	            exports.$$observable = Symbol('observable');
-	        }
-	        Symbol.observable = exports.$$observable;
-	    }
-	}
-	else {
-	    exports.$$observable = '@@observable';
-	}
-	//# sourceMappingURL=observable.js.map
-
-/***/ },
-/* 8 */
-/***/ function(module, exports, __webpack_require__) {
-
-	"use strict";
-	var Subscriber_1 = __webpack_require__(9);
+	var Subscriber_1 = __webpack_require__(8);
 	var rxSubscriber_1 = __webpack_require__(17);
 	function toSubscriber(nextOrObserver, error, complete) {
-	    if (nextOrObserver && typeof nextOrObserver === 'object') {
+	    if (nextOrObserver) {
 	        if (nextOrObserver instanceof Subscriber_1.Subscriber) {
 	            return nextOrObserver;
 	        }
-	        else if (typeof nextOrObserver[rxSubscriber_1.$$rxSubscriber] === 'function') {
+	        if (nextOrObserver[rxSubscriber_1.$$rxSubscriber]) {
 	            return nextOrObserver[rxSubscriber_1.$$rxSubscriber]();
 	        }
+	    }
+	    if (!nextOrObserver && !error && !complete) {
+	        return new Subscriber_1.Subscriber();
 	    }
 	    return new Subscriber_1.Subscriber(nextOrObserver, error, complete);
 	}
@@ -866,7 +854,7 @@
 	//# sourceMappingURL=toSubscriber.js.map
 
 /***/ },
-/* 9 */
+/* 8 */
 /***/ function(module, exports, __webpack_require__) {
 
 	"use strict";
@@ -875,10 +863,10 @@
 	    function __() { this.constructor = d; }
 	    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
 	};
-	var isFunction_1 = __webpack_require__(10);
-	var Subscription_1 = __webpack_require__(11);
+	var isFunction_1 = __webpack_require__(9);
+	var Subscription_1 = __webpack_require__(10);
+	var Observer_1 = __webpack_require__(16);
 	var rxSubscriber_1 = __webpack_require__(17);
-	var Observer_1 = __webpack_require__(18);
 	/**
 	 * Implements the {@link Observer} interface and extends the
 	 * {@link Subscription} class. While the {@link Observer} is the public API for
@@ -931,6 +919,7 @@
 	                break;
 	        }
 	    }
+	    Subscriber.prototype[rxSubscriber_1.$$rxSubscriber] = function () { return this; };
 	    /**
 	     * A static factory for a Subscriber, given a (potentially partial) definition
 	     * of an Observer.
@@ -1001,9 +990,6 @@
 	    Subscriber.prototype._complete = function () {
 	        this.destination.complete();
 	        this.unsubscribe();
-	    };
-	    Subscriber.prototype[rxSubscriber_1.$$rxSubscriber] = function () {
-	        return this;
 	    };
 	    return Subscriber;
 	}(Subscription_1.Subscription));
@@ -1122,7 +1108,7 @@
 	//# sourceMappingURL=Subscriber.js.map
 
 /***/ },
-/* 10 */
+/* 9 */
 /***/ function(module, exports) {
 
 	"use strict";
@@ -1133,16 +1119,16 @@
 	//# sourceMappingURL=isFunction.js.map
 
 /***/ },
-/* 11 */
+/* 10 */
 /***/ function(module, exports, __webpack_require__) {
 
 	"use strict";
-	var isArray_1 = __webpack_require__(12);
-	var isObject_1 = __webpack_require__(13);
-	var isFunction_1 = __webpack_require__(10);
-	var tryCatch_1 = __webpack_require__(14);
-	var errorObject_1 = __webpack_require__(15);
-	var UnsubscriptionError_1 = __webpack_require__(16);
+	var isArray_1 = __webpack_require__(11);
+	var isObject_1 = __webpack_require__(12);
+	var isFunction_1 = __webpack_require__(9);
+	var tryCatch_1 = __webpack_require__(13);
+	var errorObject_1 = __webpack_require__(14);
+	var UnsubscriptionError_1 = __webpack_require__(15);
 	/**
 	 * Represents a disposable resource, such as the execution of an Observable. A
 	 * Subscription has one important method, `unsubscribe`, that takes no argument
@@ -1288,7 +1274,7 @@
 	//# sourceMappingURL=Subscription.js.map
 
 /***/ },
-/* 12 */
+/* 11 */
 /***/ function(module, exports) {
 
 	"use strict";
@@ -1296,7 +1282,7 @@
 	//# sourceMappingURL=isArray.js.map
 
 /***/ },
-/* 13 */
+/* 12 */
 /***/ function(module, exports) {
 
 	"use strict";
@@ -1307,11 +1293,11 @@
 	//# sourceMappingURL=isObject.js.map
 
 /***/ },
-/* 14 */
+/* 13 */
 /***/ function(module, exports, __webpack_require__) {
 
 	"use strict";
-	var errorObject_1 = __webpack_require__(15);
+	var errorObject_1 = __webpack_require__(14);
 	var tryCatchTarget;
 	function tryCatcher() {
 	    try {
@@ -1331,7 +1317,7 @@
 	//# sourceMappingURL=tryCatch.js.map
 
 /***/ },
-/* 15 */
+/* 14 */
 /***/ function(module, exports) {
 
 	"use strict";
@@ -1340,7 +1326,7 @@
 	//# sourceMappingURL=errorObject.js.map
 
 /***/ },
-/* 16 */
+/* 15 */
 /***/ function(module, exports) {
 
 	"use strict";
@@ -1367,18 +1353,7 @@
 	//# sourceMappingURL=UnsubscriptionError.js.map
 
 /***/ },
-/* 17 */
-/***/ function(module, exports, __webpack_require__) {
-
-	"use strict";
-	var root_1 = __webpack_require__(5);
-	var Symbol = root_1.root.Symbol;
-	exports.$$rxSubscriber = (typeof Symbol === 'function' && typeof Symbol.for === 'function') ?
-	    Symbol.for('rxSubscriber') : '@@rxSubscriber';
-	//# sourceMappingURL=rxSubscriber.js.map
-
-/***/ },
-/* 18 */
+/* 16 */
 /***/ function(module, exports) {
 
 	"use strict";
@@ -1391,26 +1366,73 @@
 	//# sourceMappingURL=Observer.js.map
 
 /***/ },
-/* 19 */
+/* 17 */
 /***/ function(module, exports, __webpack_require__) {
 
 	"use strict";
-	var Observable_1 = __webpack_require__(4);
-	var fromEvent_1 = __webpack_require__(20);
-	Observable_1.Observable.fromEvent = fromEvent_1.fromEvent;
-	//# sourceMappingURL=fromEvent.js.map
+	var root_1 = __webpack_require__(5);
+	var Symbol = root_1.root.Symbol;
+	exports.$$rxSubscriber = (typeof Symbol === 'function' && typeof Symbol.for === 'function') ?
+	    Symbol.for('rxSubscriber') : '@@rxSubscriber';
+	//# sourceMappingURL=rxSubscriber.js.map
+
+/***/ },
+/* 18 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/* WEBPACK VAR INJECTION */(function(global) {/* global window */
+	'use strict';
+	
+	module.exports = __webpack_require__(19)(global || window || this);
+	
+	/* WEBPACK VAR INJECTION */}.call(exports, (function() { return this; }())))
+
+/***/ },
+/* 19 */
+/***/ function(module, exports) {
+
+	'use strict';
+	
+	module.exports = function symbolObservablePonyfill(root) {
+		var result;
+		var Symbol = root.Symbol;
+	
+		if (typeof Symbol === 'function') {
+			if (Symbol.observable) {
+				result = Symbol.observable;
+			} else {
+				result = Symbol('observable');
+				Symbol.observable = result;
+			}
+		} else {
+			result = '@@observable';
+		}
+	
+		return result;
+	};
+
 
 /***/ },
 /* 20 */
 /***/ function(module, exports, __webpack_require__) {
 
 	"use strict";
-	var FromEventObservable_1 = __webpack_require__(21);
-	exports.fromEvent = FromEventObservable_1.FromEventObservable.create;
+	var Observable_1 = __webpack_require__(4);
+	var fromEvent_1 = __webpack_require__(21);
+	Observable_1.Observable.fromEvent = fromEvent_1.fromEvent;
 	//# sourceMappingURL=fromEvent.js.map
 
 /***/ },
 /* 21 */
+/***/ function(module, exports, __webpack_require__) {
+
+	"use strict";
+	var FromEventObservable_1 = __webpack_require__(22);
+	exports.fromEvent = FromEventObservable_1.FromEventObservable.create;
+	//# sourceMappingURL=fromEvent.js.map
+
+/***/ },
+/* 22 */
 /***/ function(module, exports, __webpack_require__) {
 
 	"use strict";
@@ -1420,9 +1442,9 @@
 	    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
 	};
 	var Observable_1 = __webpack_require__(4);
-	var tryCatch_1 = __webpack_require__(14);
-	var errorObject_1 = __webpack_require__(15);
-	var Subscription_1 = __webpack_require__(11);
+	var tryCatch_1 = __webpack_require__(13);
+	var errorObject_1 = __webpack_require__(14);
+	var Subscription_1 = __webpack_require__(10);
 	function isNodeStyleEventEmmitter(sourceObj) {
 	    return !!sourceObj && typeof sourceObj.addListener === 'function' && typeof sourceObj.removeListener === 'function';
 	}
@@ -1452,16 +1474,42 @@
 	        this.selector = selector;
 	    }
 	    /**
-	     * @param sourceObj
-	     * @param eventName
-	     * @param selector
-	     * @return {FromEventObservable}
+	     * Creates an Observable that emits events of a specific type coming from the
+	     * given event target.
+	     *
+	     * <span class="informal">Creates an Observable from DOM events, or Node
+	     * EventEmitter events or others.</span>
+	     *
+	     * <img src="./img/fromEvent.png" width="100%">
+	     *
+	     * Creates an Observable by attaching an event listener to an "event target",
+	     * which may be an object with `addEventListener` and `removeEventListener`,
+	     * a Node.js EventEmitter, a jQuery style EventEmitter, a NodeList from the
+	     * DOM, or an HTMLCollection from the DOM. The event handler is attached when
+	     * the output Observable is subscribed, and removed when the Subscription is
+	     * unsubscribed.
+	     *
+	     * @example <caption>Emits clicks happening on the DOM document</caption>
+	     * var clicks = Rx.Observable.fromEvent(document, 'click');
+	     * clicks.subscribe(x => console.log(x));
+	     *
+	     * @see {@link from}
+	     * @see {@link fromEventPattern}
+	     *
+	     * @param {EventTargetLike} target The DOMElement, event target, Node.js
+	     * EventEmitter, NodeList or HTMLCollection to attach the event handler to.
+	     * @param {string} eventName The event name of interest, being emitted by the
+	     * `target`.
+	     * @param {function(...args: any): T} [selector] An optional function to
+	     * post-process results. It takes the arguments from the event handler and
+	     * should return a single value.
+	     * @return {Observable<T>}
 	     * @static true
 	     * @name fromEvent
 	     * @owner Observable
 	     */
-	    FromEventObservable.create = function (sourceObj, eventName, selector) {
-	        return new FromEventObservable(sourceObj, eventName, selector);
+	    FromEventObservable.create = function (target, eventName, selector) {
+	        return new FromEventObservable(target, eventName, selector);
 	    };
 	    FromEventObservable.setupSubscription = function (sourceObj, eventName, handler, subscriber) {
 	        var unsubscribe;
