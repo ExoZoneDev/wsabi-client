@@ -49,10 +49,10 @@ export class WsabiClient {
               data: data
             }
           ], (data) => {
-            if (data[0].statusCode != 200) {
-              reject(data[0]);
-            } else {
+            if (data[0].statusCode >= 200 && data[0].statusCode < 400) {
               resolve(data);
+            } else {
+              reject(data[0]);
             }
           });
         })
@@ -66,11 +66,11 @@ export class WsabiClient {
             data: data
           }
         ], (data) => {
-          if (data[0].statusCode != 200) {
-            reject(data[0]);
-          } else {
-            resolve(data);
-          }
+            if (data[0].statusCode >= 200 && data[0].statusCode < 400) {
+              resolve(data);
+            } else {
+              reject(data[0]);
+            }
         });
       }
     }).then(function (res) {
